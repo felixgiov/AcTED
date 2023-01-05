@@ -4,8 +4,11 @@ import spacy
 import argparse
 import re
 import random
+import logging
 
 from nltk.corpus import stopwords
+
+logging.basicConfig(format='[%(asctime)s] %(levelname)-8s %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-i", "--input_dir", help = "Sentence-Event pairs files dir")
@@ -40,8 +43,8 @@ for file in sent_event_pairs_files:
 
 input_files = []
 for file in os.listdir(input_dir):
-    if 'all_srl_NEW' in file:
-        input_files.append(input_dir+file)
+    if 'events_list' in file:
+        input_files.append(os.path.join(input_dir, file))
 
 events = []
 for file in input_files:
@@ -54,8 +57,10 @@ events_sorted = sorted(list(set(events)))
 
 
 """
-Clean the data and remove some noises
+Clean the data and reconstruct the events
 """
+
+logging.info("Cleaning the data and reconstructing the events...")
 
 def peek(iterable):
     """
@@ -80,15 +85,14 @@ words_to_remove = [' i ', ' me ', ' my ', ' myself ', ' we ', ' our ', ' ours ',
                    ' themselves ', ' a ', ' an ', ' the ', ' this ', ' that ', ' these ', ' those ', ' I ']
 
 for event in events_sorted:
-
-    event = event.replace('\n', '')
-    if event in event_sents_map.keys():
-        sent_count = len(event_sents_map[event])
+    event_orig = event.replace('\n', '')
+    if event_orig in event_sents_map.keys():
+        sent_count = len(event_sents_map[event_orig])
     else:
         sent_count = 0
 
     # Filter out events that begin with uppercase.
-    if not event[0].isupper():
+    if event and not event[0].isupper():
         
         # Remove some words from the event.
         event = ' ' + event + ' '
@@ -132,16 +136,18 @@ for event in events_sorted:
             else:
                 events_cleaned_count[event_new] += sent_count
 
-            if event in event_sents_map.keys():
-                for sent in event_sents_map[event]:
+            if event_orig in event_sents_map.keys():
+                for sent in event_sents_map[event_orig]:
                     if event_new not in new_event_sents_map.keys():
                         new_event_sents_map[event_new] = []
-                    new_event_sents_map[event_new].append((sent, event_new.replace('\n', '')))
+                    new_event_sents_map[event_new].append((sent, event_new))
 
 
 """
 For each event, sample n number of sentences, then generate QA problems.
 """
+
+logging.info("Generating QA problems...")
 
 event_n_sents = []  # events with at least n sentences
 for event in events_cleaned_count.keys( ):
@@ -162,14 +168,16 @@ for sent, event in event_n_sents_sampled:
     for unit in dur_units:
         qa_data.append('{}\tHow long does it take to {}?\t{}\tno'.format(sent, event, unit))
 
+logging.info("Generated QA data with {} context sentences".format(len(event_n_sents_sampled)))
+
 
 """
 Write output to a file
 """
 
 with open(os.path.join(output_dir, 'event_sents_pairs.tsv'), 'w') as writer:
-    for line in event_n_sents_sampled:
-        writer.write(line+'\n')
+    for sent, event in event_n_sents_sampled:
+        writer.write(sent+'\t'+event+'\n')
 
 with open(os.path.join(output_dir, 'event_qa_to_predict.tsv'), 'w') as writer:
     for line in qa_data:

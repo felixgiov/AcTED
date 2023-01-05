@@ -11,7 +11,7 @@ from nltk.tokenize import sent_tokenize
 from allennlp.predictors.predictor import Predictor
 import allennlp_models.tagging
 
-logger = logging.getLogger(__name__)
+logging.basicConfig(format='[%(asctime)s] %(levelname)-8s %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-c", "--conceptnet_file", help = "ConceptNet file path")
@@ -19,14 +19,17 @@ parser.add_argument("-w", "--wiki_dir", help = "Wikipedia dump files dir")
 parser.add_argument("-o", "--output_dir", help = "Output dir")
 args = parser.parse_args()
 
-conceptnet_path = args.conceptnet_path
-wiki_path = args.wiki_path
-out_path = os.path.join(args.output_dir, 'sent_event_pairs.tsv')
+conceptnet_path = args.conceptnet_file
+wiki_path = args.wiki_dir
+events_list_out_path = os.path.join(args.output_dir, 'events_list.txt')
+sent_event_pairs_out_path = os.path.join(args.output_dir, 'sent_event_pairs.tsv')
 
 
 """
 Fetch English concepts from ConceptNet 
 """
+
+logging.info("Fetching English concepts from ConceptNet...")
 
 concepts = []
 
@@ -50,6 +53,8 @@ concepts_set = list(set(concepts))
 Keep only verb phrases as events 
 """
 
+logging.info("Filtering events...")
+
 predictor = Predictor.from_path("https://storage.googleapis.com/allennlp-public-models/elmo-constituency-parser-2020.02.10.tar.gz")
 
 events = []
@@ -61,17 +66,19 @@ for i, concept in enumerate(concepts_set):
         if t[0].label() == 'VP':
             events.append(concept)
     except Exception as e:
-        logger.warning(e)
+        logging.warning(e)
 
 
 """
 Collect Wikipedia sentences that contain the exact events
 """
 
+logging.info("Collecting sentences for each event...")
+
 event_keywords = []
 for line in events:
      # Filter out long events
-    if len(line.split()) <= 3: 
+    if len(line.split()) <= 3:
         event_keywords.append(line.replace('\n', ''))
 
 
@@ -81,11 +88,11 @@ for i, event in enumerate(event_keywords):
     # Fetch the first 200 sentences that contain the event.
     p1 = Popen(['grep', '-rw', wiki_path, '-e', event, '-h'], stdout=PIPE)
     p2 = Popen(['head', '-n200'], stdin=p1.stdout, stdout=PIPE)
-    p1.stdout.close() 
+    p1.stdout.close()
     out, err = output = p2.communicate()
 
     paragraphs = output[0].decode("utf-8").split('\n')
-    
+
     for paragraph in paragraphs:
         sents = sent_tokenize(paragraph)
         for sent in sents:
@@ -94,9 +101,13 @@ for i, event in enumerate(event_keywords):
 
 
 """
-Write output to a file
+Write outputs to files
 """
 
-with open(out_path, 'w') as writer:
+with open(events_list_out_path, 'w') as writer:
+    for event in event_keywords:
+        writer.write(event + '\n')
+
+with open(sent_event_pairs_out_path, 'w') as writer:
     for sent_event_pair in sent_event_pairs:
         writer.write(sent_event_pair + '\n')

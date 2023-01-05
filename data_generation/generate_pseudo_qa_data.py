@@ -2,8 +2,11 @@ import os
 import random
 from random import randrange
 import argparse
+import logging
 
 from findpeaks import findpeaks
+
+logging.basicConfig(format='[%(asctime)s] %(levelname)-8s %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-e", "--event_sents_pairs_file", help = "Event-sentences pairs file path")
@@ -36,16 +39,17 @@ with open(predicted_qa_file, 'r') as reader:
 dur_dist = {}
 dur_dist_by_context = {}
 
+k = 8  # Number of answers for each question, i.e., number of duration units (seconds to decades)
 for i, (sent, event) in enumerate(event_sents_pairs):
     if event not in dur_dist.keys():
-        dur_dist[event] = [0] * 8
+        dur_dist[event] = [0] * k
 
-    event_sent_pair = event + '\t' + sent
+    event_sent_pair = event+'\t'+sent
     if event_sent_pair not in dur_dist_by_context.keys():
-        dur_dist_by_context[event_sent_pair] = [0] * 8
+        dur_dist_by_context[event_sent_pair] = [0] * k
 
-    for j in range(8):
-        if predicted_qa[i*(j+8)] == 'yes':
+    for j in range(k):
+        if predicted_qa[i * k + j] == 'yes':
             dur_dist[event][j] += 1
             dur_dist_by_context[event_sent_pair][j] = 1
 
@@ -54,10 +58,12 @@ for i, (sent, event) in enumerate(event_sents_pairs):
 Find the episodic and habitual durations from the peaks and their neighbouring units from the duration distributions.
 """
 
+logging.info("Finding the episodic and habitual durations from the duration distributions....")
+
 neighbour_thr = 0.75
 
 dur_units_to_index = {'seconds': 0, 'minutes': 1, 'hours': 2, 'days': 3, 'weeks': 4, 'months': 5, 'years': 6, 'decades': 7}
-dur_units = dur_units_to_index.keys()
+dur_units = list(dur_units_to_index.keys())
 
 typical_duration_all = []
 typical_duration_episodic = []
@@ -65,7 +71,7 @@ typical_duration_episodic = []
 for i, event in enumerate(dur_dist.keys()):
     durations = dur_dist[event]
 
-    # k predictions are removed in order to TODO
+    # k predictions are removed in order to reduce noises
     k = 3
     durations = [unit_count - k if unit_count >= k else 0 for unit_count in durations]
     durations = [0] + durations + [0]
@@ -107,6 +113,9 @@ for i, event in enumerate(dur_dist.keys()):
 
             episodic_peak_unit = dur_units[episodic_peak_idx]
             habitual_peak_unit = dur_units[habitual_peak_idx]
+
+            episodic_peak_left_neighbour, episodic_peak_right_neigbour = '', ''
+            habitual_peak_left_neighbour, habitual_peak_right_neigbour = '', ''
 
             # Find the neighbouring units after checking if the peak is not on the left-most or the right-most of the distribution
             if episodic_peak_idx != 0 and durations[episodic_peak_idx - 1] >= neighbour_thr * durations[episodic_peak_idx]:
@@ -154,6 +163,8 @@ for i, event in enumerate(dur_dist.keys()):
 Generate the answers for the pseudo QA data
 """
 
+logging.info("Generating the answers for the pseudo QA data...")
+
 dur_upper_bounds = [(60, 'seconds'), (60, 'minutes'), (24, 'hours'), (7, 'days'), (52, 'weeks'), (12, 'months'), (10, 'years'), (10, 'decades'), (10, 'centuries')]
 
 dur_variations = [['a few seconds', 'several seconds'],
@@ -166,7 +177,7 @@ dur_variations = [['a few seconds', 'several seconds'],
                   ['a few decades', 'several decades', 'for decades']]
 
 
-def generate_answers(n, range_min, range_max, dur_unit, type):
+def generate_answers(num, range_min, range_max, dur_unit, ans_type):
     """
     Return a list of answers with size n for pseudo QA data.
     TODO: simplify and refactor this function, reduce loops.
@@ -174,9 +185,9 @@ def generate_answers(n, range_min, range_max, dur_unit, type):
     answers = []
     number_selected= []
 
-    if type == 'pos':  # Generate positive answers.
+    if ans_type == 'pos':  # Generate positive answers.
         number_1_selected = False 
-        while len(answers) < n:
+        while len(answers) < num:
             
             # Randomly select which kind of answers will be generated, i.e, random numbers or random phrases from dur_variations.
             if randrange(4) in range(3):
@@ -205,7 +216,7 @@ def generate_answers(n, range_min, range_max, dur_unit, type):
                     answers.append(phrase_selected)
 
     else:   # Generate negative answers.
-        for i in range(n):
+        for l in range(num):
             if randrange(5) in range(2):
                 answers.append(random.choice(dur_variations[dur_unit]))
             else:
@@ -221,6 +232,9 @@ def generate_answers(n, range_min, range_max, dur_unit, type):
 pos_num = 3
 neg_num = 4
 
+# Number of contexts for each event.
+m = 1
+
 pseudo_qa = {}
 
 for item in typical_duration_episodic:
@@ -229,12 +243,12 @@ for item in typical_duration_episodic:
     question = 'How long does it take to ' + event + '?'
     contexts = []
 
-    for event in dur_dist_by_context:
-        if event.startswith(event+'\t') and episodic_peak_units == dur_dist_by_context[event]:
-            contexts.append(event.split('\t')[1])
+    for key in dur_dist_by_context:
+        if key.startswith(event+'\t') and episodic_peak_units == dur_dist_by_context[key]:
+            contexts.append(key.split('\t')[1])
 
-    if len(contexts) >= 1:
-        sampled_contexts = random.sample(contexts, 1)
+    if len(contexts) >= m:
+        sampled_contexts = random.sample(contexts, m)
 
         for j, context in enumerate(sampled_contexts):
             pos_features = []
@@ -285,9 +299,10 @@ for item in typical_duration_episodic:
 pseudo_qa_events = list(pseudo_qa.keys())
 random.shuffle(pseudo_qa_events)
 
+logging.info("Generated pseudo QA data with {} events".format(len(pseudo_qa_events)))
 
 """
-Split the pseudo QA data with 200 events increments and output them into files
+Split the pseudo QA data and output it into files
 """
 
 n = 200  
@@ -295,12 +310,23 @@ pseudo_qa_events_splits = []
 for i in range(0, len(pseudo_qa_events), n):
     pseudo_qa_events_splits.append(pseudo_qa_events[i:i+n])
 
+# Use the first 400 events for hold-out validation
+pseudo_qa_dev = []
+for i, split in enumerate(pseudo_qa_events_splits[:2]):
+    for event in split:
+        pseudo_qa_dev.extend(pseudo_qa[event])
+
+with open(os.path.join(args.output_dir, 'pseudo_qa_dev.tsv'), 'w') as writer:
+    for line in pseudo_qa_dev:
+        writer.write(line+'\n')
+
+# Generate pseudo QA data with 200 events increments for student model training
 pseudo_qa_data = []
-for i, split in enumerate(pseudo_qa_events_splits):
+for i, split in enumerate(pseudo_qa_events_splits[2:]):
     for event in split:
         pseudo_qa_data.extend(pseudo_qa[event])
 
-    with open(os.path.join(args.output_dir, 'pseudo_qa_{}.tsv'.format(i+1)*n), 'w') as writer:
+    with open(os.path.join(args.output_dir, 'pseudo_qa_{}.tsv'.format((i+1)*n)), 'w') as writer:
         for line in pseudo_qa_data:
-            writer.write(line)
+            writer.write(line+'\n')
 

@@ -7,15 +7,6 @@ from typing import List, Optional, Union
 
 logger = logging.getLogger(__name__)
 
-
-# @dataclass(frozen=True)
-# class InputFeatures:
-#     input_ids: List[int]
-#     attention_mask: Optional[List[int]] = None
-#     token_type_ids: Optional[List[int]] = None
-#     label: Optional[Union[int, float]] = None
-
-
 class TemporalProcessor(DataProcessor):
     def get_train_examples(self, data_dir):
         f = open(data_dir, "r")

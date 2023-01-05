@@ -1,8 +1,16 @@
 python run_classifier.py \
   --model_name_or_path ../tmp/roberta-large-mctaco-duration \
+  --train_data ../tmp/dev_3783_duration.tsv \
+  --dev_data ../tmp/event_qa_to_predict.tsv \
   --test_data ../tmp/event_qa_to_predict.tsv \
   --do_predict \
+  --data_dir ../tmp \
   --max_seq_length 128 \
-  --per_gpu_train_batch_size 32 \
+  --per_gpu_train_batch_size 8 \
+  --per_gpu_eval_batch_size 32 \
+  --gradient_accumulation_steps 4 \
+  --learning_rate 1e-5 \
+  --num_train_epochs 10 \
+  --seed 321 \
   --output_dir ../tmp \
   --overwrite_output_dir
