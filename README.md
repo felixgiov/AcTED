@@ -1,4 +1,4 @@
-# ⏱️ Semi-supervised Learning for Commonsense Duration QA
+# AcTED: Automatic Acquisition of Typical Event Duration for Semi-supervised Temporal Commonsense QA
 
 ## Data
 We provide the generated pseudo-labeled QA data as specified in the paper under `data_generation/pseudo_qa_data/`.
